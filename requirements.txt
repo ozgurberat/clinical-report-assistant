@@ -1,0 +1,25 @@
+# Pip fallback for environments that don't use pyproject.toml install.
+# Prefer: pip install -e ".[dev]"
+torch>=2.2
+transformers>=4.44
+peft>=0.12
+trl>=0.9
+bitsandbytes>=0.43
+accelerate>=0.33
+datasets>=2.20
+sentencepiece>=0.2
+mlflow>=2.15
+langchain>=0.2
+langchain-community>=0.2
+faiss-cpu>=1.8
+qdrant-client>=1.10
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pydantic>=2.8
+pandas>=2.2
+numpy>=1.26
+lxml>=5.2
+beautifulsoup4>=4.12
+pyyaml>=6.0
+tqdm>=4.66
+pytest>=8.2

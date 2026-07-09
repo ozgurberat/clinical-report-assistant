@@ -1,0 +1,21 @@
+# Configuration for the data acquisition + preprocessing pipeline.
+
+source:
+  reports_url: "https://openi.nlm.nih.gov/imgs/collections/NLMCXR_reports.tgz"
+  images_url: "https://openi.nlm.nih.gov/imgs/collections/NLMCXR_png.tgz"
+  # Fallback if the official host is unreachable (requires `kaggle` CLI + API token):
+  kaggle_dataset: "raddar/chest-xrays-indiana-university"
+
+paths:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+
+split:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+  seed: 42
+
+preprocessing:
+  min_findings_chars: 10   # drop reports with near-empty findings
+  lowercase_mesh: true

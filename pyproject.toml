@@ -1,0 +1,67 @@
+[project]
+name = "clinical-report-assistant"
+version = "0.1.0"
+description = "Fine-tuned, RAG-augmented LLM assistant for structured extraction, summarization, and QA over radiology reports."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Mirac" }]
+
+dependencies = [
+    # Core ML / fine-tuning
+    "torch>=2.2",
+    "transformers>=4.44",
+    "peft>=0.12",
+    "trl>=0.9",
+    "bitsandbytes>=0.43",
+    "accelerate>=0.33",
+    "datasets>=2.20",
+    "sentencepiece>=0.2",
+    # Experiment tracking
+    "mlflow>=2.15",
+    # RAG
+    "langchain>=0.2",
+    "langchain-community>=0.2",
+    "faiss-cpu>=1.8",
+    "qdrant-client>=1.10",
+    # Serving
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    # Data wrangling
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "lxml>=5.2",
+    "beautifulsoup4>=4.12",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "black>=24.4",
+    "mypy>=1.10",
+]
+serve = [
+    "vllm>=0.5; platform_system == 'Linux'",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.black]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

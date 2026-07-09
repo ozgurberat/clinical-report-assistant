@@ -1,0 +1,56 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+
+# Data (never commit raw/processed clinical data)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+*.tgz
+*.tar.gz
+*.dcm
+
+# Model artifacts
+models/
+checkpoints/
+*.safetensors
+*.bin
+*.gguf
+runs/
+mlruns/
+wandb/
+
+# Vector DB local storage
+qdrant_storage/
+*.faiss
+*.index
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Docker
+docker/*/data/
+
+# Kubernetes local state
+k8s/*.local.yaml
