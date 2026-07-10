@@ -35,6 +35,23 @@ def load_config(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
+def pick_precision() -> tuple[torch.dtype, bool, bool]:
+    """Choose bf16 vs fp16 based on what the actual GPU supports, rather than
+    a static config flag. T4 (Turing, Colab free tier) lacks native bf16
+    tensor core support and runs it unaccelerated; A100/L4/H100 (Ampere or
+    newer, e.g. Colab Pro) support bf16 natively and it's the better choice
+    there (matches the dtype most LLMs are pretrained in, avoids fp16's
+    occasional gradient-scaling overflow issues). Returns
+    (compute_dtype, use_bf16, use_fp16)."""
+    if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+        gpu_name = torch.cuda.get_device_name(0)
+        print(f"[train] GPU: {gpu_name} — bf16 natively supported, using bf16.")
+        return torch.bfloat16, True, False
+    gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+    print(f"[train] GPU: {gpu_name} — no native bf16 support, using fp16.")
+    return torch.float16, False, True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", choices=["extraction", "summarization"], required=True)
@@ -43,6 +60,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    compute_dtype, use_bf16, use_fp16 = pick_precision()
 
     tokenizer = AutoTokenizer.from_pretrained(cfg["model"]["name"])
     if tokenizer.pad_token is None:
@@ -51,7 +69,7 @@ def main() -> None:
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=cfg["quantization"]["load_in_4bit"],
         bnb_4bit_quant_type=cfg["quantization"]["bnb_4bit_quant_type"],
-        bnb_4bit_compute_dtype=getattr(torch, cfg["quantization"]["bnb_4bit_compute_dtype"]),
+        bnb_4bit_compute_dtype=compute_dtype,
         bnb_4bit_use_double_quant=cfg["quantization"]["bnb_4bit_use_double_quant"],
     )
     model = AutoModelForCausalLM.from_pretrained(
@@ -92,7 +110,8 @@ def main() -> None:
         logging_steps=cfg["training"]["logging_steps"],
         eval_strategy=cfg["training"]["eval_strategy"],
         save_strategy=cfg["training"]["save_strategy"],
-        bf16=cfg["training"]["bf16"],
+        bf16=use_bf16,
+        fp16=use_fp16,
         seed=cfg["training"]["seed"],
         max_length=cfg["model"]["max_seq_length"],
         assistant_only_loss=True,  # only the assistant's reply contributes to the loss

@@ -7,7 +7,10 @@ model:
 quantization:
   load_in_4bit: true
   bnb_4bit_quant_type: "nf4"
-  bnb_4bit_compute_dtype: "bfloat16"
+  # Compute dtype (bf16 vs fp16) is auto-detected at runtime in train.py based
+  # on the actual GPU (see pick_precision()) — T4 lacks native bf16 support
+  # and uses fp16, A100/L4/H100 support bf16 natively and use that. Not
+  # configured here since it depends on hardware, not a fixed preference.
   bnb_4bit_use_double_quant: true
 
 lora:
@@ -34,7 +37,6 @@ training:
   logging_steps: 10
   eval_strategy: "epoch"
   save_strategy: "epoch"
-  bf16: true
   seed: 42
 
 mlflow:
