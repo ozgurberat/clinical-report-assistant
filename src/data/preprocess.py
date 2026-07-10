@@ -15,6 +15,7 @@ import argparse
 import csv
 import json
 import random
+import re
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -24,6 +25,21 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = REPO_ROOT / "configs" / "data.yaml"
 
 SECTION_LABELS = ("COMPARISON", "INDICATION", "FINDINGS", "IMPRESSION")
+
+# A small number of Open-i source reports have an entire second report
+# (header + findings + impression) concatenated inside the FINDINGS or
+# IMPRESSION field itself — an export/addendum artifact from the original
+# EHR, not a real long clinical note. Section-header words should never
+# legitimately appear as literal text inside these fields, so their
+# presence is a reliable signal to drop the report. See data/README.md.
+DUPLICATE_ARTIFACT_PATTERN = re.compile(r"\b(FINDINGS|IMPRESSION|EXAM)\s*:", re.IGNORECASE)
+
+
+def has_duplicate_artifact(rec: dict) -> bool:
+    return bool(
+        DUPLICATE_ARTIFACT_PATTERN.search(rec["findings"])
+        or DUPLICATE_ARTIFACT_PATTERN.search(rec["impression"])
+    )
 
 
 def load_config(path: Path = DEFAULT_CONFIG) -> dict:
@@ -103,12 +119,16 @@ def main() -> None:
         )
 
     records = []
-    dropped = 0
+    dropped_empty = 0
+    dropped_artifact = 0
     min_chars = cfg["preprocessing"]["min_findings_chars"]
     for xml_path in xml_files:
         rec = parse_report(xml_path)
         if rec is None or len(rec["findings"]) < min_chars:
-            dropped += 1
+            dropped_empty += 1
+            continue
+        if has_duplicate_artifact(rec):
+            dropped_artifact += 1
             continue
         records.append(rec)
 
@@ -134,7 +154,11 @@ def main() -> None:
     with open(args.out / "splits.json", "w") as f:
         json.dump(splits, f, indent=2)
 
-    print(f"[done] Parsed {len(records)} reports ({dropped} dropped as empty/invalid).")
+    print(
+        f"[done] Parsed {len(records)} reports "
+        f"({dropped_empty} dropped as empty/invalid, "
+        f"{dropped_artifact} dropped as duplicate-content artifacts)."
+    )
     print(f"        -> {jsonl_path}")
     print(f"        -> {csv_path}")
     print(f"        -> {args.out / 'splits.json'} "

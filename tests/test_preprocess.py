@@ -6,7 +6,7 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from src.data.preprocess import build_splits, parse_report
+from src.data.preprocess import build_splits, has_duplicate_artifact, parse_report
 
 SAMPLE_XML = """<?xml version="1.0"?>
 <eCitation>
@@ -76,6 +76,29 @@ def test_parse_report_returns_none_on_malformed_xml(tmp_path: Path):
     p = tmp_path / "bad.xml"
     p.write_text("<not><valid xml")
     assert parse_report(p) is None
+
+
+def test_has_duplicate_artifact_flags_embedded_second_report():
+    # Mirrors real report CXR2415: impression contains a second full report
+    # (header + findings + impression) concatenated after the real impression.
+    rec = {
+        "findings": "The heart is mildly enlarged.",
+        "impression": (
+            "Hypoinflation with elevated left hemidiaphragm. "
+            "IMPRESSION: Exam: CHEST 2V FRONTAL/LATERAL Date: XXXX "
+            "FINDINGS: The heart is mildly enlarged. "
+            "IMPRESSION: Hypoinflation with elevated left hemidiaphragm."
+        ),
+    }
+    assert has_duplicate_artifact(rec) is True
+
+
+def test_has_duplicate_artifact_ignores_clean_reports():
+    rec = {
+        "findings": "The lungs are clear. No focal consolidation.",
+        "impression": "No acute cardiopulmonary process.",
+    }
+    assert has_duplicate_artifact(rec) is False
 
 
 def test_build_splits_partitions_all_ids_without_overlap():
