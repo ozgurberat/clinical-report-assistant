@@ -110,6 +110,9 @@ def main() -> None:
         logging_steps=cfg["training"]["logging_steps"],
         eval_strategy=cfg["training"]["eval_strategy"],
         save_strategy=cfg["training"]["save_strategy"],
+        load_best_model_at_end=True,  # keep the best-eval checkpoint, not just whatever ran last
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
         bf16=use_bf16,
         fp16=use_fp16,
         seed=cfg["training"]["seed"],
