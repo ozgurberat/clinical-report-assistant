@@ -24,7 +24,7 @@ import yaml
 from datasets import load_dataset
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from trl import DataCollatorForCompletionOnlyLM, SFTConfig, SFTTrainer
+from trl import SFTConfig, SFTTrainer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = REPO_ROOT / "configs" / "training.yaml"
@@ -33,30 +33,6 @@ DEFAULT_CONFIG = REPO_ROOT / "configs" / "training.yaml"
 def load_config(path: Path) -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
-
-
-def build_formatting_func(tokenizer):
-    def format_example(example):
-        return tokenizer.apply_chat_template(example["messages"], tokenize=False)
-
-    return format_example
-
-
-def find_response_template(tokenizer) -> str:
-    """Figure out the exact literal string this model's chat template inserts
-    right before the assistant's turn, so the data collator can mask the loss
-    to only the assistant's response. Derived empirically from the tokenizer
-    itself rather than hardcoded, since the marker differs by model family
-    (this is exactly the <|im_start|>assistant-style text discussed earlier)."""
-    probe = tokenizer.apply_chat_template(
-        [
-            {"role": "user", "content": "PROBE_USER"},
-            {"role": "assistant", "content": "PROBE_ASSISTANT"},
-        ],
-        tokenize=False,
-    )
-    marker = probe.split("PROBE_USER")[1].split("PROBE_ASSISTANT")[0]
-    return marker.strip("\n")
 
 
 def main() -> None:
@@ -102,10 +78,6 @@ def main() -> None:
     }
     dataset = load_dataset("json", data_files=data_files)
 
-    response_template = find_response_template(tokenizer)
-    print(f"[train] Detected response template: {response_template!r}")
-    collator = DataCollatorForCompletionOnlyLM(response_template, tokenizer=tokenizer)
-
     run_name = f"{args.task}-{cfg['model']['name'].split('/')[-1]}"
     mlflow.set_experiment(cfg["mlflow"]["experiment_name"])
 
@@ -123,17 +95,20 @@ def main() -> None:
         bf16=cfg["training"]["bf16"],
         seed=cfg["training"]["seed"],
         max_seq_length=cfg["model"]["max_seq_length"],
+        assistant_only_loss=True,  # only the assistant's reply contributes to the loss
         report_to="mlflow",
         run_name=run_name,
     )
 
+    # Dataset already has a "messages" column in chat format (see prompt_format.py) —
+    # SFTTrainer detects conversational data and applies the model's own chat
+    # template internally, so no manual formatting_func is needed here.
     trainer = SFTTrainer(
         model=model,
         args=sft_config,
         train_dataset=dataset["train"],
         eval_dataset=dataset["validation"],
-        formatting_func=build_formatting_func(tokenizer),
-        data_collator=collator,
+        processing_class=tokenizer,
     )
 
     with mlflow.start_run(run_name=run_name):
