@@ -1,0 +1,41 @@
+# QLoRA fine-tuning configuration.
+
+model:
+  name: "Qwen/Qwen3-4B"
+  max_seq_length: 1024  # generous vs. our ~700-token worst-case example (see EDA)
+
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+training:
+  output_dir: "outputs"
+  num_train_epochs: 3
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  lr_scheduler_type: "cosine"
+  logging_steps: 10
+  eval_strategy: "epoch"
+  save_strategy: "epoch"
+  bf16: true
+  seed: 42
+
+mlflow:
+  experiment_name: "clinical-report-assistant"
