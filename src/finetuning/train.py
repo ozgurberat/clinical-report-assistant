@@ -94,7 +94,7 @@ def main() -> None:
         save_strategy=cfg["training"]["save_strategy"],
         bf16=cfg["training"]["bf16"],
         seed=cfg["training"]["seed"],
-        max_seq_length=cfg["model"]["max_seq_length"],
+        max_length=cfg["model"]["max_seq_length"],
         assistant_only_loss=True,  # only the assistant's reply contributes to the loss
         report_to="mlflow",
         run_name=run_name,
