@@ -139,8 +139,8 @@ def evaluate_extraction(model, tokenizer, examples: list[dict]) -> dict:
             field_scores[field].append(token_f1(str(pred.get(field, "")), str(gold.get(field, ""))))
         diagnosis_scores.append(set_f1(pred.get("diagnosis", []), gold.get("diagnosis", [])))
 
-        if (i + 1) % 25 == 0:
-            print(f"  ...{i + 1}/{len(examples)}")
+        if (i + 1) % 10 == 0:
+            print(f"  ...{i + 1}/{len(examples)}", flush=True)
 
     n = len(examples)
     metrics = {
@@ -170,8 +170,8 @@ def evaluate_summarization(model, tokenizer, examples: list[dict]) -> dict:
         for key in scores:
             scores[key].append(result[key].fmeasure)
 
-        if (i + 1) % 25 == 0:
-            print(f"  ...{i + 1}/{len(examples)}")
+        if (i + 1) % 10 == 0:
+            print(f"  ...{i + 1}/{len(examples)}", flush=True)
 
     n = len(examples)
     metrics = {"n_examples": n, "exact_match_rate": exact_matches / n}
@@ -194,10 +194,10 @@ def main() -> None:
     if args.limit:
         examples = examples[: args.limit]
 
-    print(f"[eval] Loading fine-tuned {args.task} model...")
+    print(f"[eval] Loading fine-tuned {args.task} model...", flush=True)
     model, tokenizer = load_finetuned(args.task)
 
-    print(f"[eval] Generating + scoring {len(examples)} test examples...")
+    print(f"[eval] Generating + scoring {len(examples)} test examples...", flush=True)
     if args.task == "extraction":
         metrics = evaluate_extraction(model, tokenizer, examples)
     else:
