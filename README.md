@@ -2,7 +2,7 @@
 
 A fine-tuned, RAG-augmented LLM system for structured extraction, summarization, and question-answering over radiology reports — built on real clinical NLP data, served via quantized inference, containerized, and orchestrated with Kubernetes.
 
-> **Status:** Phase 1 (data & repo scaffolding) in progress. See [Roadmap](#roadmap) for what's done vs. planned.
+> **Status:** Phase 1 (data pipeline) and Phase 2 (QLoRA fine-tuning) done. Full test-set metrics in progress. See [Roadmap](#roadmap) for what's done vs. planned.
 
 ## Architecture
 
@@ -67,8 +67,8 @@ Each report XML contains structured sections (Comparison, Indication, Findings, 
 
 | Phase | Description | Status |
 |---|---|---|
-| 1 | Data acquisition, cleaning, repo scaffolding | 🔵 In progress |
-| 2 | QLoRA fine-tuning (field extraction + summarization/QA), tracked in MLflow | ⚪ Planned |
+| 1 | Data acquisition, cleaning, repo scaffolding | 🟢 Done |
+| 2 | QLoRA fine-tuning (field extraction + summarization), tracked in MLflow | 🟡 Fine-tuned + qualitatively validated; full test-set metrics in progress |
 | 3 | RAG layer — vector DB (FAISS/Qdrant) + LangChain retrieval | ⚪ Planned |
 | 4 | FastAPI + quantized serving (vLLM/TGI), Dockerized, docker-compose | ⚪ Planned |
 | 5 | Kubernetes manifests (minikube/kind) + GitHub Actions CI/CD | ⚪ Planned |

@@ -9,6 +9,7 @@ accelerate>=0.33
 datasets>=2.20
 sentencepiece>=0.2
 mlflow>=2.15
+rouge-score>=0.1.2
 langchain>=0.2
 langchain-community>=0.2
 faiss-cpu>=1.8

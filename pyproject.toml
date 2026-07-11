@@ -19,6 +19,8 @@ dependencies = [
     "sentencepiece>=0.2",
     # Experiment tracking
     "mlflow>=2.15",
+    # Evaluation
+    "rouge-score>=0.1.2",
     # RAG
     "langchain>=0.2",
     "langchain-community>=0.2",
