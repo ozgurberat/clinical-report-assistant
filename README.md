@@ -2,7 +2,7 @@
 
 A fine-tuned, RAG-augmented LLM system for structured extraction, summarization, and question-answering over radiology reports — built on real clinical NLP data, served via quantized inference, containerized, and orchestrated with Kubernetes.
 
-> **Status:** Phase 1 (data pipeline) and Phase 2 (QLoRA fine-tuning) done. Full test-set metrics in progress. See [Roadmap](#roadmap) for what's done vs. planned.
+> **Status:** Phases 1–3 done (data pipeline, QLoRA fine-tuning, RAG retrieval + grounded QA). See [Roadmap](#roadmap) for what's done vs. planned.
 
 ## Architecture
 
@@ -24,14 +24,17 @@ A fine-tuned, RAG-augmented LLM system for structured extraction, summarization,
                         ▼       ▼
         ┌───────────────────┐ ┌──────────────────┐
         │  Fine-tuned LLM   │ │   Vector DB       │
-        │  (Llama/Qwen/Phi) │ │  (FAISS / Qdrant) │
+        │   (Qwen3-4B,      │ │ (Qdrant, local/   │
+        │   QLoRA adapters) │ │  embedded mode)   │
         └─────────┬─────────┘ └────────┬──────────┘
                    │                    │
                    └─────────┬──────────┘
                               ▼
                    ┌────────────────────┐
                    │   RAG orchestrator │
-                   │   (LangChain)      │
+                   │  (hand-rolled:     │
+                   │  qdrant-client +   │
+                   │ sentence-transf.)  │
                    └──────────┬─────────┘
                               ▼
                    ┌────────────────────┐
@@ -68,8 +71,8 @@ Each report XML contains structured sections (Comparison, Indication, Findings, 
 | Phase | Description | Status |
 |---|---|---|
 | 1 | Data acquisition, cleaning, repo scaffolding | 🟢 Done |
-| 2 | QLoRA fine-tuning (field extraction + summarization), tracked in MLflow | 🟡 Fine-tuned + qualitatively validated; full test-set metrics in progress |
-| 3 | RAG layer — vector DB (FAISS/Qdrant) + LangChain retrieval | ⚪ Planned |
+| 2 | QLoRA fine-tuning (field extraction + summarization), tracked in MLflow | 🟢 Done — full test-set metrics below |
+| 3 | RAG layer — vector DB (Qdrant) + grounded QA over base Qwen3-4B | 🟢 Done — retrieval + generation validated (see [`src/rag/README.md`](src/rag/README.md)) |
 | 4 | FastAPI + quantized serving (vLLM/TGI), Dockerized, docker-compose | ⚪ Planned |
 | 5 | Kubernetes manifests (minikube/kind) + GitHub Actions CI/CD | ⚪ Planned |
 | 6 | Monitoring (logging, optional Prometheus+Grafana) + write-up | ⚪ Planned |
@@ -122,15 +125,30 @@ See [`src/data/download_openi.py`](src/data/download_openi.py) and [`src/data/pr
 
 ## Results
 
-*(Populated as phases complete.)*
+*(Populated as phases complete. Extraction/summarization numbers are on the
+full 343-example held-out test set, computed by
+[`src/finetuning/evaluate.py`](src/finetuning/evaluate.py); no baseline was
+computed for these — see below for why.)*
 
 | Metric | Baseline | Fine-tuned | Notes |
 |---|---|---|---|
-| Field extraction F1 | — | — | Findings / Impression / Diagnosis |
-| Summarization ROUGE-L | — | — | |
-| RAG retrieval precision@k | — | — | |
-| Inference latency (p50/p95) | — | — | Pre- vs. post-quantization |
-| Throughput (req/s) | — | — | vLLM/TGI benchmark |
+| Extraction — whole-object exact match | — | 0.615 | All 5 JSON fields byte-identical |
+| Extraction — JSON parse failure rate | — | 0.029 | ~10/343 malformed outputs |
+| Extraction — field F1 (comparison/indication/findings/impression) | — | 0.968 / 0.963 / 0.969 / 0.962 | Token-overlap F1, see `evaluate.py` |
+| Extraction — diagnosis list F1 | — | 0.799 | Set-overlap F1 over MeSH tags |
+| Summarization — exact match | — | 0.350 | Expected to be well under 1.0 — abstractive task |
+| Summarization — ROUGE-1 / ROUGE-2 / ROUGE-L | — | 0.694 / 0.592 / 0.682 | vs. ground-truth impression |
+| RAG retrieval + grounded QA | — | Qualitatively validated | No formal precision@k yet — see [`src/rag/README.md`](src/rag/README.md) |
+| Inference latency (p50/p95) | — | — | Pre- vs. post-quantization — Phase 4 |
+| Throughput (req/s) | — | — | Phase 4 serving benchmark |
+
+No "baseline" column is filled in above for the fine-tuning metrics because
+the meaningful baseline — the un-fine-tuned base model attempting the same
+narrow JSON-extraction/summarization tasks — was never run as a controlled
+comparison; the adapter-vs-base behavior we did observe (documented in
+`src/rag/README.md`) was a qualitative demonstration of a different point
+(narrow fine-tunes vs. general open-ended QA), not an apples-to-apples
+baseline for these specific metrics.
 
 ## License
 
