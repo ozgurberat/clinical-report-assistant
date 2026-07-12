@@ -26,12 +26,23 @@ data/processed/*
 *.tar.gz
 *.dcm
 
-# Model artifacts
+# Model artifacts — trained adapters/checkpoints live in Google Drive (via
+# Colab) and, for local Docker testing, get copied straight into outputs/ on
+# whatever machine runs the container. They should NEVER be git-added: full
+# training checkpoints include optimizer/scheduler/RNG state meant for
+# resuming training, not inference, and the whole tree easily runs to
+# hundreds of MB — well past what a git push handles gracefully. Excluding
+# the whole outputs/ directory here (not just specific file patterns) is
+# what was actually missing before; *.safetensors etc. alone caught some
+# files but not the surrounding checkpoint directories full of the rest.
+outputs/
 models/
 checkpoints/
 *.safetensors
 *.bin
 *.gguf
+*.pt
+*.pth
 runs/
 mlruns/
 wandb/

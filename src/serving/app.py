@@ -102,12 +102,14 @@ class ModelManager:
             )
         else:
             logger.warning(
-                "No CUDA GPU detected — loading in fp32 on CPU. bitsandbytes' "
-                "4-bit kernels are CUDA-only. Expect generation to be slow; "
-                "this path exists for structural/correctness testing "
-                "(e.g. Docker Desktop on a Mac), not for real throughput."
+                "No CUDA GPU detected — loading in bf16 on CPU. bitsandbytes' "
+                "4-bit kernels are CUDA-only, and fp32 needs ~16GB just for "
+                "the weights (a real OOM risk in a memory-capped container); "
+                "bf16 halves that to ~8GB. Expect generation to be slow; this "
+                "path exists for structural/correctness testing (e.g. Docker "
+                "Desktop on a Mac), not for real throughput."
             )
-            base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, torch_dtype=torch.float32)
+            base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, dtype=torch.bfloat16)
 
         self.model = PeftModel.from_pretrained(
             base_model, str(EXTRACTION_ADAPTER_DIR), adapter_name="extraction"
