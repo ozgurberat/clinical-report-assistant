@@ -42,14 +42,27 @@ and `create_collection`/`delete_collection` rather than the deprecated
 project has already been bitten more than once by library APIs moving past
 what any of us knew when the code was written.
 
-## RAG-QA generation (not yet built)
+## RAG-QA generation (done)
 
-Next: a `qa.py` that takes a user's question, calls `retrieve_similar()` to
-pull the relevant past reports, builds a prompt embedding that retrieved
-evidence as context, and generates an answer using the **plain base Qwen3-4B
-model with no adapter attached** — not the extraction or summarization
-fine-tunes, which are narrowly specialized for their own tasks and would try
-to force any input into their trained output shape (see the earlier
-adapter-vs-base experiment). The base instruct model already handles general
-open-ended synthesis well; RAG's job is only to supply it with real,
-retrieved facts instead of letting it guess.
+`qa.py` takes a user's question, calls `retrieve_similar()` to pull the
+relevant past reports, builds a prompt embedding that retrieved evidence as
+context, and generates an answer using the **plain base Qwen3-4B model with
+no adapter attached** — not the extraction or summarization fine-tunes,
+which are narrowly specialized for their own tasks and would try to force
+any input into their trained output shape (see the earlier adapter-vs-base
+experiment). The base instruct model already handles general open-ended
+synthesis well; RAG's job is only to supply it with real, retrieved facts
+instead of letting it guess.
+
+```bash
+python -m src.rag.qa --question "..." --show-reasoning
+```
+
+Deliberately the opposite choice from `evaluate.py` on one point: thinking
+mode is left ON here (`enable_thinking=True`), not suppressed. Extraction and
+summarization are single-step transformations our fine-tunes never modeled a
+reasoning trace for, so an empty `<think>` block there was pure waste.
+Synthesizing across several retrieved documents into one answer is exactly
+the multi-step task thinking mode exists for, and this path never touches a
+fine-tuned adapter, so there's no risk of an empty, untrained thinking block
+— the base model's reasoning here is the real thing.
