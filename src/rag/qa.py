@@ -112,16 +112,19 @@ def parse_think_output(text: str) -> tuple[str, str]:
 
 
 def generate_answer(
-    model, tokenizer, question: str, context: str, max_new_tokens: int = 1024
+    model, tokenizer, question: str, context: str, max_new_tokens: int = 1536
 ) -> tuple[str, str]:
     """Returns (reasoning, answer) via parse_think_output() on the model's
     raw decoded output.
 
-    max_new_tokens defaults to 1024, not 512: thinking mode means real token
-    budget gets spent on reasoning before the model ever writes an answer,
-    and 512 wasn't enough headroom for reasoning over several retrieved
-    documents plus a conclusion — observed in practice, generation hit the
-    limit mid reasoning-block with no closing </think> and no answer at all."""
+    max_new_tokens has been raised twice now: 512 wasn't enough headroom for
+    reasoning over several retrieved documents plus a conclusion (generation
+    hit the limit mid reasoning-block, no closing </think>, no answer at
+    all); 1024 got further — a complete reasoning trace and most of a
+    well-structured answer — but still truncated mid-sentence in the closing
+    references section. 1536 gives real headroom past both observed failure
+    points rather than nudging the ceiling up by the smallest amount that
+    happened to work once."""
     import torch
 
     user_content = f"Similar past cases, most relevant first:\n\n{context}\n\nQuestion: {question}"
