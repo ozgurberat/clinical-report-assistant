@@ -83,12 +83,45 @@ def load_base_model():
     return model, tokenizer
 
 
+def parse_think_output(text: str) -> tuple[str, str]:
+    """Split a model's raw decoded output into (reasoning, answer).
+
+    Three cases:
+    1. A complete <think>...</think> block followed by the real answer —
+       the normal case.
+    2. Text that starts with <think> but never closes it — generation hit
+       max_new_tokens while still reasoning, so there's no real answer at
+       all. Surfaced explicitly rather than silently returning the raw,
+       unclosed trace as if it were the answer (this happened in practice
+       with the original max_new_tokens=512 default — see generate_answer).
+    3. No <think> tag at all — just return the text as-is.
+
+    Pulled out as its own pure function (no model/tokenizer involved) so this
+    parsing logic is unit-testable without a GPU — see tests/test_qa.py."""
+    match = THINK_PATTERN.search(text)
+    if match:
+        return match.group(1).strip(), THINK_PATTERN.sub("", text).strip()
+    if text.lstrip().startswith("<think>"):
+        reasoning = text.split("<think>", 1)[1].strip()
+        answer = (
+            "[No final answer — generation ran out of tokens while still "
+            "reasoning. Raise max_new_tokens and retry.]"
+        )
+        return reasoning, answer
+    return "", text.strip()
+
+
 def generate_answer(
-    model, tokenizer, question: str, context: str, max_new_tokens: int = 512
+    model, tokenizer, question: str, context: str, max_new_tokens: int = 1024
 ) -> tuple[str, str]:
-    """Returns (reasoning, answer). reasoning is whatever the model put in
-    its <think> block (empty string if it didn't produce one), answer is the
-    final text after it."""
+    """Returns (reasoning, answer) via parse_think_output() on the model's
+    raw decoded output.
+
+    max_new_tokens defaults to 1024, not 512: thinking mode means real token
+    budget gets spent on reasoning before the model ever writes an answer,
+    and 512 wasn't enough headroom for reasoning over several retrieved
+    documents plus a conclusion — observed in practice, generation hit the
+    limit mid reasoning-block with no closing </think> and no answer at all."""
     import torch
 
     user_content = f"Similar past cases, most relevant first:\n\n{context}\n\nQuestion: {question}"
@@ -106,10 +139,7 @@ def generate_answer(
         output = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
     text = tokenizer.decode(output[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
 
-    match = THINK_PATTERN.search(text)
-    reasoning = match.group(1).strip() if match else ""
-    answer = THINK_PATTERN.sub("", text).strip()
-    return reasoning, answer
+    return parse_think_output(text)
 
 
 def answer_question(

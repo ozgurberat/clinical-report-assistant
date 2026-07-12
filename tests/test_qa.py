@@ -4,7 +4,7 @@ deferred inside load_base_model()/generate_answer(), same pattern as
 evaluate.py and build_index.py, so this module is importable and testable
 in any plain Python environment."""
 
-from src.rag.qa import THINK_PATTERN, build_context
+from src.rag.qa import THINK_PATTERN, build_context, parse_think_output
 
 RETRIEVED = [
     {
@@ -86,3 +86,34 @@ def test_think_pattern_no_match_when_absent():
     text = "Just a direct answer, no thinking block."
     assert THINK_PATTERN.search(text) is None
     assert THINK_PATTERN.sub("", text).strip() == text
+
+
+def test_parse_think_output_complete_block():
+    text = "<think>\nWeigh report 1857 and 2032.\n</think>\n\nMild cardiomegaly is common."
+    reasoning, answer = parse_think_output(text)
+    assert reasoning == "Weigh report 1857 and 2032."
+    assert answer == "Mild cardiomegaly is common."
+
+
+def test_parse_think_output_truncated_mid_reasoning():
+    # Exactly the failure mode observed in practice: max_new_tokens ran out
+    # while the model was still inside <think>, so there's no closing tag
+    # and no real answer at all.
+    text = (
+        "<think>\nReport 3917: mild cardiomegaly, clear lungs. Report 1458: "
+        "stable cardiomegaly. I should reference the reports that have the "
+        "similar findings. The most relevant are 3917"
+    )
+    reasoning, answer = parse_think_output(text)
+    assert reasoning.startswith("Report 3917: mild cardiomegaly")
+    assert "ran out of tokens" in answer
+    # Critically: the raw "<think>" tag must NOT leak into the answer shown
+    # to the user, unlike the original bug.
+    assert "<think>" not in answer
+
+
+def test_parse_think_output_no_think_tag_at_all():
+    text = "Direct answer with no reasoning trace at all."
+    reasoning, answer = parse_think_output(text)
+    assert reasoning == ""
+    assert answer == text
