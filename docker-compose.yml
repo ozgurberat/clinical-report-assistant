@@ -22,6 +22,11 @@ services:
       - "8000:8000"
     volumes:
       - ./outputs:/app/outputs:ro
-      - ./data/processed:/app/data/processed:ro
+      # NOT :ro — Qdrant's local/embedded mode manages its own file storage
+      # and writes a .lock file into this directory for consistency, even
+      # for read-only query workloads. A read-only mount here crashes /ask
+      # with "OSError: [Errno 30] Read-only file system: '.../qdrant_index/.lock'"
+      # (hit this in practice — see git history for the exact traceback).
+      - ./data/processed:/app/data/processed
     environment:
       - PYTHONUNBUFFERED=1

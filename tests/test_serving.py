@@ -1,25 +1,33 @@
 """Unit tests for src.serving.schemas — pure Pydantic validation, no ML
 dependencies involved.
 
+pydantic is deliberately NOT part of CI's dependency set (see
+.github/workflows/ci.yml — it installs with `--no-deps` to keep the "offline"
+test job fast and free of the full ML/serving stack, the same reason every
+other test file in this repo avoids needing torch/transformers/peft/etc. at
+import time). This module breaks that pattern by nature — it's testing
+Pydantic schemas, so it needs pydantic — so pytest.importorskip() below tells
+pytest to skip just this file when pydantic is absent, rather than erroring
+out and aborting the entire collection (which is what happened the first
+time this was pushed: one missing import marked all 43 other, unrelated
+tests as failed too).
+
 NOTE, unlike every other test file in this repo: these have NOT actually been
-run during development. pydantic isn't installed in the sandbox this project
-was built in, and it has no network access to install it (confirmed earlier
-when even `pip install pytest` failed against a blocked proxy). These are
-straightforward Pydantic validation checks that should just work in any
-environment where pydantic is available (Colab, the Docker build, or your own
-machine) — flagging this honestly rather than claiming a verification that
-didn't actually happen, consistent with how every other untestable-locally
-piece of this project has been handled (train.py, the notebooks' GPU cells).
-Please run this file for real the first time you have pydantic available and
-report back if anything fails.
+run anywhere yet. pydantic isn't installed in the sandbox this project was
+built in, and it has no network access to install it (confirmed earlier when
+even `pip install pytest` failed against a blocked proxy). Run this file for
+real the first time you have pydantic available (Colab, the Docker build, or
+your own machine) and report back if anything fails."""
 
-Deliberately avoids importing pytest itself (uses plain assert + manual
-try/except, not pytest.raises) so it stays runnable the same way as every
-other test file in this repo, whether or not pytest itself is installed."""
+from __future__ import annotations
 
-from pydantic import ValidationError
+import pytest
 
-from src.serving.schemas import (
+pytest.importorskip("pydantic")
+
+from pydantic import ValidationError  # noqa: E402
+
+from src.serving.schemas import (  # noqa: E402
     ExtractionRequest,
     ExtractionResponse,
     HealthResponse,
