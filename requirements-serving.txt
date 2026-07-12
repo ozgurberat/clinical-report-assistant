@@ -1,0 +1,16 @@
+# Dependencies for the FastAPI serving image ONLY — deliberately leaner than
+# requirements.txt (which also covers training/eval/MLflow/RAG-indexing
+# tooling that the running service itself never imports). Keeping this
+# separate keeps the Docker image smaller and makes it obvious what the
+# service actually depends on at runtime.
+torch>=2.2
+transformers>=4.44
+peft>=0.12
+bitsandbytes>=0.43
+accelerate>=0.33
+sentence-transformers>=3.0
+qdrant-client>=1.10
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pydantic>=2.8
+pyyaml>=6.0

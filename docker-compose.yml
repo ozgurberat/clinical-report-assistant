@@ -1,0 +1,27 @@
+# Serves the FastAPI app on http://localhost:8000.
+#
+# BEFORE running `docker compose up --build`, you need the trained artifacts
+# on THIS machine — they're gitignored and only exist wherever training/
+# indexing actually ran (your Google Drive, via Colab). See
+# src/serving/README.md for exactly what to copy down and from where.
+#
+# Runs CPU-only by default (no `deploy.resources.reservations.devices` GPU
+# block) — Docker Desktop on a Mac has no NVIDIA GPU passthrough anyway. The
+# app detects this itself (see ModelManager.load() in src/serving/app.py) and
+# falls back to fp32 on CPU: correct, but slow. That's intentional here —
+# this compose file is for structural/correctness testing, not throughput.
+# On an actual GPU host (e.g. a cloud VM with the NVIDIA Container Toolkit),
+# add a `deploy.resources.reservations.devices` GPU block to use it for real.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./outputs:/app/outputs:ro
+      - ./data/processed:/app/data/processed:ro
+    environment:
+      - PYTHONUNBUFFERED=1

@@ -1,0 +1,231 @@
+"""FastAPI service — Phase 4 serving layer.
+
+Loads the base Qwen3-4B model ONCE at startup and attaches BOTH the
+extraction and summarization LoRA adapters to that single model instance as
+named adapters, switching which one is active per-request with PEFT's
+set_adapter()/disable_adapter() — rather than the pattern used in
+evaluate.py and the notebooks, which load a fresh base-model-plus-one-adapter
+copy every time. That was fine for offline batch evaluation running one task
+at a time; a server handling requests for three different behaviors
+(extraction, summarization, RAG-QA) needs all of them available
+simultaneously without holding three separate copies of an 8GB+ model in
+memory. This is also the standard pattern real multi-LoRA serving systems
+(e.g. vLLM's multi-LoRA support) are built around.
+
+Runs on GPU (4-bit quantized, same as everywhere else in this project) when
+CUDA is available. Falls back to plain fp32 on CPU otherwise — bitsandbytes'
+4-bit kernels are CUDA-only — specifically so this can be built and run in
+Docker Desktop on a GPU-less machine for structural/correctness testing.
+Expect CPU generation to be slow; that's not what this fallback path is for.
+
+IMPORTANT: this expects outputs/{extraction,summarization}-Qwen3-4B/final_adapter
+and data/processed/{reports.jsonl,qdrant_index/} to already exist on disk —
+both are gitignored (clinical data + model binaries don't belong in git) and
+only exist wherever training/indexing actually ran (your Google Drive, via
+Colab). See src/serving/README.md for how to get them onto whatever machine
+runs this container before starting it.
+
+Run directly (no Docker):
+    uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
+
+Run via Docker: see docker-compose.yml.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import logging
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+
+from src.finetuning.prompt_format import SYSTEM_EXTRACTION, SYSTEM_SUMMARIZATION
+from src.rag.qa import SYSTEM_QA, build_context, parse_think_output
+from src.rag.retrieve import retrieve_similar
+from src.serving.schemas import (
+    ExtractionRequest,
+    ExtractionResponse,
+    HealthResponse,
+    QARequest,
+    QAResponse,
+    SummarizationRequest,
+    SummarizationResponse,
+)
+
+logger = logging.getLogger("serving")
+
+BASE_MODEL = "Qwen/Qwen3-4B"
+EXTRACTION_ADAPTER_DIR = Path("outputs/extraction-Qwen3-4B/final_adapter")
+SUMMARIZATION_ADAPTER_DIR = Path("outputs/summarization-Qwen3-4B/final_adapter")
+
+
+class ModelManager:
+    """Owns the one loaded model instance and both adapters. All heavy ML
+    imports live inside load(), not at module level, so this module can be
+    imported (and its request-building logic exercised) without torch/
+    transformers/peft installed — see tests/test_serving.py."""
+
+    def __init__(self) -> None:
+        self.tokenizer = None
+        self.model = None
+        self.cuda_available: bool = False
+
+    def load(self) -> None:
+        import torch
+        from peft import PeftModel
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+        for path in (EXTRACTION_ADAPTER_DIR, SUMMARIZATION_ADAPTER_DIR):
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"Expected adapter at {path}, but it doesn't exist. "
+                    "See src/serving/README.md for how to get trained adapters "
+                    "onto this machine before starting the service."
+                )
+
+        self.cuda_available = torch.cuda.is_available()
+        self.tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        if self.cuda_available:
+            compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=compute_dtype,
+                bnb_4bit_use_double_quant=True,
+            )
+            base_model = AutoModelForCausalLM.from_pretrained(
+                BASE_MODEL, quantization_config=bnb_config, device_map="auto"
+            )
+        else:
+            logger.warning(
+                "No CUDA GPU detected — loading in fp32 on CPU. bitsandbytes' "
+                "4-bit kernels are CUDA-only. Expect generation to be slow; "
+                "this path exists for structural/correctness testing "
+                "(e.g. Docker Desktop on a Mac), not for real throughput."
+            )
+            base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, torch_dtype=torch.float32)
+
+        self.model = PeftModel.from_pretrained(
+            base_model, str(EXTRACTION_ADAPTER_DIR), adapter_name="extraction"
+        )
+        self.model.load_adapter(str(SUMMARIZATION_ADAPTER_DIR), adapter_name="summarization")
+        self.model.eval()
+        logger.info("Model loaded. CUDA available: %s. Adapters: %s", self.cuda_available, self.adapter_names)
+
+    @property
+    def adapter_names(self) -> list[str]:
+        return ["extraction", "summarization"]
+
+    def generate(
+        self,
+        messages: list[dict],
+        adapter_name: str | None,
+        max_new_tokens: int = 256,
+        enable_thinking: bool = False,
+    ) -> str:
+        """adapter_name=None runs the plain base model via PEFT's
+        disable_adapter() context manager (used for RAG-QA, per src/rag/qa.py)."""
+        import torch
+
+        if adapter_name:
+            self.model.set_adapter(adapter_name)
+            adapter_context = contextlib.nullcontext()
+        else:
+            adapter_context = self.model.disable_adapter()
+
+        prompt = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True, enable_thinking=enable_thinking
+        )
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        with adapter_context, torch.no_grad():
+            output = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        return self.tokenizer.decode(
+            output[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
+        ).strip()
+
+
+model_manager = ModelManager()
+
+
+def create_app() -> FastAPI:
+    """Factory, not a module-level FastAPI() call with a decorated startup
+    event — keeps model_manager.load() out of import time, so importing this
+    module (e.g. from a test) never triggers it."""
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        model_manager.load()
+        yield
+
+    application = FastAPI(title="Clinical Report Assistant", lifespan=lifespan)
+
+    @application.get("/health", response_model=HealthResponse)
+    def health() -> HealthResponse:
+        return HealthResponse(
+            status="ok" if model_manager.model is not None else "loading",
+            cuda_available=model_manager.cuda_available,
+            adapters_loaded=model_manager.adapter_names,
+        )
+
+    @application.post("/extract", response_model=ExtractionResponse)
+    def extract(request: ExtractionRequest) -> ExtractionResponse:
+        messages = [
+            {"role": "system", "content": SYSTEM_EXTRACTION},
+            {"role": "user", "content": request.report_text},
+        ]
+        text = model_manager.generate(messages, adapter_name="extraction", enable_thinking=False)
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=502, detail=f"Model returned invalid JSON: {text!r}"
+            ) from None
+        try:
+            return ExtractionResponse(**parsed)
+        except TypeError:
+            raise HTTPException(
+                status_code=502, detail=f"Model JSON missing expected keys: {parsed!r}"
+            ) from None
+
+    @application.post("/summarize", response_model=SummarizationResponse)
+    def summarize(request: SummarizationRequest) -> SummarizationResponse:
+        lines = []
+        if request.indication:
+            lines.append(f"Indication: {request.indication}")
+        if request.comparison:
+            lines.append(f"Comparison: {request.comparison}")
+        lines.append(f"Findings: {request.findings}")
+        messages = [
+            {"role": "system", "content": SYSTEM_SUMMARIZATION},
+            {"role": "user", "content": "\n".join(lines)},
+        ]
+        impression = model_manager.generate(messages, adapter_name="summarization", enable_thinking=False)
+        return SummarizationResponse(impression=impression)
+
+    @application.post("/ask", response_model=QAResponse)
+    def ask(request: QARequest) -> QAResponse:
+        retrieved = retrieve_similar(request.question, top_k=request.top_k)
+        context = build_context(retrieved)
+        user_content = f"Similar past cases, most relevant first:\n\n{context}\n\nQuestion: {request.question}"
+        messages = [
+            {"role": "system", "content": SYSTEM_QA},
+            {"role": "user", "content": user_content},
+        ]
+        # adapter_name=None + enable_thinking=True: plain base model,
+        # thinking mode on — see src/rag/qa.py for why.
+        text = model_manager.generate(
+            messages, adapter_name=None, max_new_tokens=1536, enable_thinking=True
+        )
+        reasoning, answer = parse_think_output(text)
+        return QAResponse(answer=answer, reasoning=reasoning, sources=[r["report_id"] for r in retrieved])
+
+    return application
+
+
+app = create_app()

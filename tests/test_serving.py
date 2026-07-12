@@ -1,0 +1,99 @@
+"""Unit tests for src.serving.schemas — pure Pydantic validation, no ML
+dependencies involved.
+
+NOTE, unlike every other test file in this repo: these have NOT actually been
+run during development. pydantic isn't installed in the sandbox this project
+was built in, and it has no network access to install it (confirmed earlier
+when even `pip install pytest` failed against a blocked proxy). These are
+straightforward Pydantic validation checks that should just work in any
+environment where pydantic is available (Colab, the Docker build, or your own
+machine) — flagging this honestly rather than claiming a verification that
+didn't actually happen, consistent with how every other untestable-locally
+piece of this project has been handled (train.py, the notebooks' GPU cells).
+Please run this file for real the first time you have pydantic available and
+report back if anything fails.
+
+Deliberately avoids importing pytest itself (uses plain assert + manual
+try/except, not pytest.raises) so it stays runnable the same way as every
+other test file in this repo, whether or not pytest itself is installed."""
+
+from pydantic import ValidationError
+
+from src.serving.schemas import (
+    ExtractionRequest,
+    ExtractionResponse,
+    HealthResponse,
+    QARequest,
+    QAResponse,
+    SummarizationRequest,
+)
+
+
+def _expect_validation_error(build):
+    try:
+        build()
+    except ValidationError:
+        return
+    raise AssertionError("expected a ValidationError, but none was raised")
+
+
+def test_extraction_request_rejects_empty_report_text():
+    _expect_validation_error(lambda: ExtractionRequest(report_text=""))
+
+
+def test_extraction_request_accepts_valid_text():
+    req = ExtractionRequest(report_text="Findings: clear lungs.")
+    assert req.report_text == "Findings: clear lungs."
+
+
+def test_extraction_response_rejects_missing_fields():
+    _expect_validation_error(
+        lambda: ExtractionResponse(comparison="", indication="", findings="")
+        # impression and diagnosis omitted on purpose
+    )
+
+
+def test_extraction_response_accepts_complete_fields():
+    resp = ExtractionResponse(
+        comparison="",
+        indication="Chest pain.",
+        findings="Clear lungs.",
+        impression="No acute disease.",
+        diagnosis=["normal"],
+    )
+    assert resp.diagnosis == ["normal"]
+
+
+def test_summarization_request_defaults_indication_and_comparison_empty():
+    req = SummarizationRequest(findings="Clear lungs.")
+    assert req.indication == ""
+    assert req.comparison == ""
+
+
+def test_summarization_request_rejects_empty_findings():
+    _expect_validation_error(lambda: SummarizationRequest(findings=""))
+
+
+def test_qa_request_top_k_defaults_to_none():
+    req = QARequest(question="What's typical follow-up?")
+    assert req.top_k is None
+
+
+def test_qa_request_top_k_out_of_range_rejected():
+    _expect_validation_error(lambda: QARequest(question="q", top_k=0))
+    _expect_validation_error(lambda: QARequest(question="q", top_k=21))
+
+
+def test_qa_request_top_k_boundary_values_accepted():
+    assert QARequest(question="q", top_k=1).top_k == 1
+    assert QARequest(question="q", top_k=20).top_k == 20
+
+
+def test_qa_response_shape():
+    resp = QAResponse(answer="Mild cardiomegaly is common.", reasoning="", sources=["1857", "2032"])
+    assert resp.sources == ["1857", "2032"]
+
+
+def test_health_response_shape():
+    resp = HealthResponse(status="ok", cuda_available=True, adapters_loaded=["extraction", "summarization"])
+    assert resp.adapters_loaded == ["extraction", "summarization"]
