@@ -1,0 +1,18 @@
+# Configuration for the RAG (retrieval-augmented generation) layer.
+
+embedding:
+  # Small, CPU-friendly sentence-embedding model — no GPU required to build
+  # or query this index, unlike the fine-tuning phase. 384-dimensional
+  # vectors, widely used as a solid general-purpose default.
+  model_name: "sentence-transformers/all-MiniLM-L6-v2"
+
+qdrant:
+  # Local/embedded Qdrant — an on-disk directory, no server process to run.
+  # Path is relative to --processed (default: data/processed), so the index
+  # lives alongside the rest of the processed corpus in the Drive-persisted
+  # repo folder and survives Colab runtime disconnects.
+  path: "qdrant_index"
+  collection_name: "radiology_reports"
+
+retrieval:
+  top_k: 5

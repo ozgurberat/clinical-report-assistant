@@ -22,10 +22,9 @@ dependencies = [
     # Evaluation
     "rouge-score>=0.1.2",
     # RAG
-    "langchain>=0.2",
-    "langchain-community>=0.2",
-    "faiss-cpu>=1.8",
+    "sentence-transformers>=3.0",
     "qdrant-client>=1.10",
+    "faiss-cpu>=1.8",
     # Serving
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
