@@ -25,10 +25,11 @@ dependencies = [
     "sentence-transformers>=3.0",
     "qdrant-client>=1.10",
     "faiss-cpu>=1.8",
-    # Serving
+    # Serving + monitoring
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
     "pydantic>=2.8",
+    "prometheus-client>=0.20",
     # Data wrangling
     "pandas>=2.2",
     "numpy>=1.26",

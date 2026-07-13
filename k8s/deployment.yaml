@@ -19,6 +19,15 @@ spec:
     metadata:
       labels:
         app: clinical-report-assistant
+      annotations:
+        # Standard convention a Prometheus server auto-discovers pods by —
+        # documents that this pod exposes real metrics at /metrics on 8000,
+        # ready to be scraped, even though no Prometheus server is actually
+        # deployed in this project (see k8s/README.md's Monitoring section
+        # for why that was deliberately scoped out).
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8000"
     spec:
       containers:
         - name: api

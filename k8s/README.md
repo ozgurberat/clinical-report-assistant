@@ -96,15 +96,30 @@ curl -X POST http://localhost:8000/ask \
 kind delete cluster --name clinical-report-assistant
 ```
 
-## What hasn't been verified yet
+## Monitoring — scope decision
 
-Same disclosure as every other piece of this project's infra: these
-manifests were written and reviewed carefully, and their YAML syntax was
-checked, but **none of this has actually been run** — there's no Docker/kind
-available in the sandbox this project was built in. The hostPath/extraMounts
-bridging in particular (two hops: host machine -> kind node -> pod) is the
-part most likely to need a small fix on the first real attempt, similar to
-how the Docker Compose volume mount needed a `:ro` fix after actually
-running it. Treat the first `kind create cluster` + `kubectl apply` the same
-way as every other "first real run" in this project: a debugging pass, not
-a sure thing.
+Phase 6 added a real `/metrics` endpoint (Prometheus format — request
+counts, latency histogram, tokens generated) and structured request logging
+to the app itself (see `src/serving/README.md`'s Monitoring section), and
+`deployment.yaml` carries the standard `prometheus.io/scrape` annotations
+documenting how a Prometheus server would auto-discover this pod. What was
+deliberately **not** built: an actual Prometheus + Grafana deployment in
+this cluster. That was a scoping call, not an oversight — the skill being
+demonstrated is knowing what to instrument and why, which the `/metrics`
+endpoint itself proves; standing up the full observability stack would have
+meant another round of the same deploy-debug-wait-10-minutes cycle already
+gone through twice for Docker and Kubernetes, better spent on the ML side of
+this project. If you want the full dashboard later, the annotations and
+metrics format are already there to scrape.
+
+## What's been verified vs. what hasn't
+
+`kubectl apply` + a real pod running `1/1 Ready` + all endpoints returning
+correct responses through `kubectl port-forward` — all confirmed working, on
+the first real attempt, no fixes needed (unlike Docker Compose's `:ro` fix
+in Phase 4). What has **not** been verified: the `/metrics` endpoint itself
+and the `prometheus.io/scrape` annotations, added after the last real test
+run — same disclosure as everything else in this project that's new and
+untested. If you want to confirm `/metrics` works on this cluster too, it's
+one more `docker build` + `kind load docker-image` + `kubectl rollout
+restart deployment/clinical-report-assistant` away.

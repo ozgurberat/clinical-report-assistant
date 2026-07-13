@@ -52,12 +52,15 @@ curl http://localhost:8000/health
 ## GPU vs. CPU — set expectations before you test
 
 Docker Desktop on a Mac has no NVIDIA GPU passthrough, so this runs CPU-only
-by default. `ModelManager.load()` detects this and falls back to plain fp32
-on CPU (bitsandbytes' 4-bit kernels are CUDA-only) — correct, but slow.
-**This test is about verifying the container, dependencies, and API actually
-work end-to-end — not about generation speed.** Expect requests to take
-noticeably longer than they did in Colab on a GPU; that's expected, not a
-bug. If you ever deploy this on an actual GPU host (a cloud VM with the
+by default. `ModelManager.load()` detects this and falls back to bf16 on CPU
+(bitsandbytes' 4-bit kernels are CUDA-only; fp32 was the first attempt but
+OOM'd a memory-capped container at ~16GB just for the weights — bf16 halves
+that) — correct, but slow. **This test is about verifying the container,
+dependencies, and API actually work end-to-end — not about generation
+speed.** Model loading alone took 10-13 minutes in practice; `/ask` with its
+full 1536-token budget can take 20-40+ minutes on CPU (use the
+`max_new_tokens` override on `/ask` for a fast smoke test instead — see
+below). If you ever deploy this on an actual GPU host (a cloud VM with the
 NVIDIA Container Toolkit), add a `deploy.resources.reservations.devices` GPU
 block to `docker-compose.yml` to get real throughput.
 
@@ -74,22 +77,49 @@ curl -X POST http://localhost:8000/summarize \
 
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"question": "What have we typically found in similar cases of mild cardiomegaly with clear lungs?"}'
+  -d '{"question": "What have we typically found in similar cases of mild cardiomegaly with clear lungs?", "max_new_tokens": 100}'
 ```
+
+`/ask` accepts an optional `max_new_tokens` override specifically for fast
+CPU smoke tests — a small value (e.g. 100) will almost always cut generation
+off mid-reasoning, but that's fine: `parse_think_output()` (see
+`src/rag/qa.py`) detects the unclosed `<think>` block and returns an honest
+"ran out of tokens" message instead of garbage, which is enough to confirm
+the whole retrieve→generate→respond pipeline works. Leave it unset (or set
+it high) for a real, complete answer — expect a long wait on CPU.
 
 FastAPI also serves interactive docs at `http://localhost:8000/docs` —
 useful for poking at the API by hand without constructing curl commands.
 
-## What hasn't been verified yet
+## Monitoring
 
-Everything in `src/serving/` was written and reviewed carefully, and its
-syntax has been checked, but **the FastAPI app itself has not actually been
-run** during development — `fastapi`/`pydantic`/`torch`/etc. aren't
-installed in the sandbox this project was built in, and it has no network
-access to install them (same limitation that's applied to every GPU-
-dependent file in this project — `train.py`, the notebooks' GPU cells, and
-so on). `tests/test_serving.py`'s Pydantic validation tests are also
-unexecuted for the same reason. This is the first time any of this code
-actually runs — treat the first `docker compose up` as a debugging pass,
-same as the very first training run back in Phase 2, and bring back whatever
-errors come up.
+`/metrics` exposes Prometheus-format counters and histograms: total requests
+and latency per endpoint (`http_requests_total`, `http_request_duration_seconds`
+— the histogram specifically so p50/p95 can be computed at query time), and
+tokens generated per adapter (`llm_tokens_generated_total`). Every request
+also gets a structured log line (`request method=... path=... status=...
+duration_ms=...`). No Prometheus server or Grafana dashboard is actually
+deployed in this project — that was a deliberate scope decision (see
+`k8s/README.md`) — but the endpoint is real and scrapeable, and
+`k8s/deployment.yaml` carries the standard `prometheus.io/scrape` annotations
+documenting how it would be wired up.
+
+```bash
+curl http://localhost:8000/metrics
+```
+
+## What's been verified vs. what hasn't
+
+Every endpoint (`/health`, `/extract`, `/summarize`, `/ask`) has been run for
+real and confirmed working — both via `docker compose up` on CPU and, later,
+via a real `kubectl apply` on a local kind cluster (see `k8s/README.md`).
+Real bugs surfaced and got fixed in the process: an OOM from loading in fp32
+on CPU (fixed by switching to bf16), a Qdrant crash from a read-only volume
+mount (Qdrant's local mode needs to write a `.lock` file even for read
+queries), and `/ask` truncating mid-reasoning on a too-small `max_new_tokens`
+(fixed with a higher default plus the request-level override above). What
+has **not** been verified: the `/metrics` endpoint and the monitoring
+middleware added in Phase 6, since they were written after the last real
+test run — same disclosure as everything else in this project that's new
+and untested, treat the first request against a freshly rebuilt image as a
+debugging pass.
