@@ -87,6 +87,22 @@ def test_qa_request_top_k_defaults_to_none():
     assert req.top_k is None
 
 
+def test_qa_request_max_new_tokens_defaults_to_none():
+    # None means "use app.py's 1536 default" — see the /ask endpoint.
+    req = QARequest(question="q")
+    assert req.max_new_tokens is None
+
+
+def test_qa_request_max_new_tokens_accepts_override_for_fast_cpu_smoke_tests():
+    req = QARequest(question="q", max_new_tokens=64)
+    assert req.max_new_tokens == 64
+
+
+def test_qa_request_max_new_tokens_out_of_range_rejected():
+    _expect_validation_error(lambda: QARequest(question="q", max_new_tokens=8))
+    _expect_validation_error(lambda: QARequest(question="q", max_new_tokens=4096))
+
+
 def test_qa_request_top_k_out_of_range_rejected():
     _expect_validation_error(lambda: QARequest(question="q", top_k=0))
     _expect_validation_error(lambda: QARequest(question="q", top_k=21))

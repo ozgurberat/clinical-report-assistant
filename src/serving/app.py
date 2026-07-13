@@ -222,7 +222,10 @@ def create_app() -> FastAPI:
         # adapter_name=None + enable_thinking=True: plain base model,
         # thinking mode on — see src/rag/qa.py for why.
         text = model_manager.generate(
-            messages, adapter_name=None, max_new_tokens=1536, enable_thinking=True
+            messages,
+            adapter_name=None,
+            max_new_tokens=request.max_new_tokens or 1536,
+            enable_thinking=True,
         )
         reasoning, answer = parse_think_output(text)
         return QAResponse(answer=answer, reasoning=reasoning, sources=[r["report_id"] for r in retrieved])
