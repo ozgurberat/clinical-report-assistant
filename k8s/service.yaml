@@ -1,0 +1,15 @@
+# ClusterIP — the simplest option for local testing. Access via
+# `kubectl port-forward service/clinical-report-assistant 8000:8000`
+# rather than NodePort/extraPortMappings, which would need the kind cluster
+# config and this Service's port to stay in lockstep. Fewer moving parts.
+apiVersion: v1
+kind: Service
+metadata:
+  name: clinical-report-assistant
+spec:
+  selector:
+    app: clinical-report-assistant
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP

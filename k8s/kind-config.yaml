@@ -1,0 +1,22 @@
+# kind (Kubernetes-in-Docker) cluster config for local Phase 5 testing.
+#
+# Runs Kubernetes nodes as Docker containers on top of Docker Desktop (the
+# same one already set up for Phase 4) — no separate VM/hypervisor needed,
+# which is why kind was picked over minikube here.
+#
+# extraMounts bridges host directories into the kind node's filesystem —
+# this is the FIRST of two hops needed to get the trained artifacts into a
+# pod. The second hop is the hostPath volumes in k8s/deployment.yaml, which
+# reference these same in-node paths. Run `kind create cluster --config
+# k8s/kind-config.yaml` from the REPO ROOT so the relative hostPaths below
+# resolve correctly — if they don't, replace them with the absolute path
+# from `pwd`.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: ./outputs
+        containerPath: /mnt/outputs
+      - hostPath: ./data/processed
+        containerPath: /mnt/data-processed

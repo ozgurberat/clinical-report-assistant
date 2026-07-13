@@ -1,0 +1,83 @@
+# Deployment for the serving app — same image and same two mounted
+# directories as docker-compose.yml, just orchestrated by Kubernetes instead
+# of Docker Compose directly. The hostPath volumes below reference paths
+# INSIDE the kind node's filesystem (/mnt/outputs, /mnt/data-processed),
+# which only exist there because of kind-config.yaml's extraMounts — this
+# file alone does nothing without that config applied first.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clinical-report-assistant
+  labels:
+    app: clinical-report-assistant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clinical-report-assistant
+  template:
+    metadata:
+      labels:
+        app: clinical-report-assistant
+    spec:
+      containers:
+        - name: api
+          image: clinical-report-assistant-api:latest
+          # Never pull from a registry — the image only exists locally,
+          # loaded into kind directly via `kind load docker-image`.
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          volumeMounts:
+            - name: outputs
+              mountPath: /app/outputs
+              readOnly: true
+            - name: data-processed
+              # NOT readOnly — same reason as docker-compose.yml: Qdrant's
+              # local/embedded mode needs to write a .lock file into this
+              # directory even for read-only query workloads (hit this in
+              # practice during Phase 4 — see git history).
+              mountPath: /app/data/processed
+          # A startupProbe, not just a readiness/liveness probe, because the
+          # model load itself (torch + transformers + both adapters, in bf16
+          # on CPU, no GPU in a local kind cluster) can take upwards of
+          # 10+ minutes — observed directly during Phase 4 testing.
+          # Liveness/readiness alone would either need equally huge
+          # thresholds (slowing down real failure detection later) or kill
+          # the pod mid-startup, restart-looping it forever. startupProbe
+          # disables the other two probes until it succeeds once.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 15
+            failureThreshold: 80 # 15s * 80 = 20 minutes of startup grace
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "6Gi"
+              cpu: "1"
+            limits:
+              memory: "12Gi"
+      volumes:
+        - name: outputs
+          hostPath:
+            path: /mnt/outputs
+            type: Directory
+        - name: data-processed
+          hostPath:
+            path: /mnt/data-processed
+            type: Directory

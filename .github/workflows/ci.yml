@@ -31,7 +31,33 @@ jobs:
       - name: Run offline unit tests
         run: pytest tests/ -v
 
-  # Placeholder — extended in Phase 5 with:
-  #   - docker build validation
-  #   - kind/minikube manifest lint (kubeval / kubeconform)
-  #   - deploy step
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build-only, not run: validates the Dockerfile, requirements-serving.txt,
+      # and COPY paths resolve correctly. Doesn't (and can't, in CI) actually
+      # start the container — that needs the trained adapters, which are
+      # gitignored on purpose (see src/serving/README.md) and a GPU or a lot
+      # of patience on CPU, neither of which this runner has.
+      - name: Build serving image
+        run: docker build -t clinical-report-assistant-api:ci -f docker/Dockerfile .
+
+  k8s-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Static schema validation against the real Kubernetes API spec — catches
+      # structural errors (bad field names, wrong types) without needing a
+      # live cluster. kind itself isn't run here; this is deliberately
+      # narrower than a real `kubectl apply`, same spirit as docker-build
+      # above only checking that the image builds, not that it runs.
+      - name: Validate Kubernetes manifests
+        run: |
+          docker run --rm -v "$PWD/k8s:/k8s" ghcr.io/yannh/kubeconform:latest \
+            -summary -kubernetes-version 1.29.0 /k8s/deployment.yaml /k8s/service.yaml
+
+  # Placeholder — extended further with a real deploy step if/when this
+  # moves beyond local kind testing (e.g. to a cloud Kubernetes cluster).
