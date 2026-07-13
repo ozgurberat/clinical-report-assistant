@@ -2,7 +2,7 @@
 
 A fine-tuned, RAG-augmented LLM system for structured extraction, summarization, and question-answering over radiology reports — built on real clinical NLP data, served via quantized inference, containerized, and orchestrated with Kubernetes.
 
-> **Status:** Phases 1–4 done. Phase 5 (Kubernetes + CI/CD) built, pending first real test run. See [Roadmap](#roadmap) for what's done vs. planned.
+> **Status:** Phases 1–5 done — data pipeline, QLoRA fine-tuning, RAG retrieval + grounded QA, and FastAPI serving all validated end-to-end, running on real Kubernetes (kind) via `kubectl apply`. See [Roadmap](#roadmap) for what's done vs. planned.
 
 ## Architecture
 
@@ -74,7 +74,7 @@ Each report XML contains structured sections (Comparison, Indication, Findings, 
 | 2 | QLoRA fine-tuning (field extraction + summarization), tracked in MLflow | 🟢 Done — full test-set metrics below |
 | 3 | RAG layer — vector DB (Qdrant) + grounded QA over base Qwen3-4B | 🟢 Done — retrieval + generation validated (see [`src/rag/README.md`](src/rag/README.md)) |
 | 4 | FastAPI + quantized serving, Dockerized (multi-adapter: extraction/summarization/RAG-QA on one loaded base model) | 🟢 Done — validated end-to-end via Docker Compose on CPU (all 3 endpoints); GPU quantized path validated separately in Colab (see [`src/serving/README.md`](src/serving/README.md)) |
-| 5 | Kubernetes manifests (kind) + GitHub Actions CI/CD (docker build + manifest lint) | 🟡 Built, pending first real test run — see [`k8s/README.md`](k8s/README.md) |
+| 5 | Kubernetes manifests (kind) + GitHub Actions CI/CD (docker build + manifest lint) | 🟢 Done — deployed via `kubectl apply`, all endpoints validated on a real cluster — see [`k8s/README.md`](k8s/README.md) |
 | 6 | Monitoring (logging, optional Prometheus+Grafana) + write-up | ⚪ Planned |
 
 Project is modular — a stop after Phase 4 still yields a complete fine-tuning + RAG + Docker deliverable.
