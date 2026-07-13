@@ -2,7 +2,7 @@
 
 A fine-tuned, RAG-augmented LLM system for structured extraction, summarization, and question-answering over radiology reports — built on real clinical NLP data, served via quantized inference, containerized, and orchestrated with Kubernetes.
 
-> **Status:** Phases 1–5 done — data pipeline, QLoRA fine-tuning, RAG retrieval + grounded QA, and FastAPI serving all validated end-to-end, running on real Kubernetes (kind) via `kubectl apply`. See [Roadmap](#roadmap) for what's done vs. planned.
+> **Status:** All 6 phases done — data pipeline, QLoRA fine-tuning, RAG retrieval + grounded QA, and FastAPI serving all validated end-to-end, running on real Kubernetes (kind) via `kubectl apply`, with Prometheus-format monitoring instrumented. See [Roadmap](#roadmap) for details, or [`docs/write-up.md`](docs/write-up.md) for the full narrative.
 
 ## Architecture
 
@@ -38,21 +38,22 @@ A fine-tuned, RAG-augmented LLM system for structured extraction, summarization,
                    └──────────┬─────────┘
                               ▼
                    ┌────────────────────┐
-                   │  Quantized serving │
-                   │  (vLLM / TGI)      │
+                   │  FastAPI service   │
+                   │ (transformers+PEFT,│
+                   │  4-bit NF4, 1 base │
+                   │ model + 2 adapters)│
                    └──────────┬─────────┘
                               ▼
-                   ┌────────────────────┐
-                   │   FastAPI service  │
-                   └──────────┬─────────┘
-                              ▼
-                Docker Compose → Kubernetes (minikube/kind)
+                Docker Compose → Kubernetes (kind)
                               │
                               ▼
-                   Monitoring (logging / Prometheus+Grafana)
+              Monitoring (structured logs + /metrics,
+              Prometheus-format, scrape-annotated)
 ```
 
-*(Diagram will be replaced with a rendered image once Phase 4 architecture is finalized.)*
+See [`docs/architecture.md`](docs/architecture.md) for the final technical
+decision per phase, and [`docs/write-up.md`](docs/write-up.md) for the full
+narrative (why each decision, what broke, how it got fixed).
 
 ## Dataset
 
@@ -75,7 +76,7 @@ Each report XML contains structured sections (Comparison, Indication, Findings, 
 | 3 | RAG layer — vector DB (Qdrant) + grounded QA over base Qwen3-4B | 🟢 Done — retrieval + generation validated (see [`src/rag/README.md`](src/rag/README.md)) |
 | 4 | FastAPI + quantized serving, Dockerized (multi-adapter: extraction/summarization/RAG-QA on one loaded base model) | 🟢 Done — validated end-to-end via Docker Compose on CPU (all 3 endpoints); GPU quantized path validated separately in Colab (see [`src/serving/README.md`](src/serving/README.md)) |
 | 5 | Kubernetes manifests (kind) + GitHub Actions CI/CD (docker build + manifest lint) | 🟢 Done — deployed via `kubectl apply`, all endpoints validated on a real cluster — see [`k8s/README.md`](k8s/README.md) |
-| 6 | Monitoring (logging, optional Prometheus+Grafana) + write-up | ⚪ Planned |
+| 6 | Monitoring (`/metrics`, structured logging, scrape annotations) + write-up | 🟢 Done — see [`src/serving/README.md`](src/serving/README.md#monitoring), [`k8s/README.md`](k8s/README.md#monitoring--scope-decision), and [`docs/write-up.md`](docs/write-up.md) |
 
 Project is modular — a stop after Phase 4 still yields a complete fine-tuning + RAG + Docker deliverable.
 
