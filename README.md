@@ -2,7 +2,7 @@
 
 A fine-tuned, RAG-augmented LLM system for structured extraction, summarization, and question-answering over radiology reports — built on real clinical NLP data, served via quantized inference, containerized, and orchestrated with Kubernetes.
 
-> **Status:** Phases 1–3 done (data pipeline, QLoRA fine-tuning, RAG retrieval + grounded QA). Phase 4 (FastAPI serving + Docker) built, pending first real test run. See [Roadmap](#roadmap) for what's done vs. planned.
+> **Status:** Phases 1–4 done (data pipeline, QLoRA fine-tuning, RAG retrieval + grounded QA, FastAPI serving + Docker validated end-to-end on CPU). See [Roadmap](#roadmap) for what's done vs. planned.
 
 ## Architecture
 
@@ -73,7 +73,7 @@ Each report XML contains structured sections (Comparison, Indication, Findings, 
 | 1 | Data acquisition, cleaning, repo scaffolding | 🟢 Done |
 | 2 | QLoRA fine-tuning (field extraction + summarization), tracked in MLflow | 🟢 Done — full test-set metrics below |
 | 3 | RAG layer — vector DB (Qdrant) + grounded QA over base Qwen3-4B | 🟢 Done — retrieval + generation validated (see [`src/rag/README.md`](src/rag/README.md)) |
-| 4 | FastAPI + quantized serving, Dockerized (multi-adapter: extraction/summarization/RAG-QA on one loaded base model) | 🟡 Built, pending first real test run — see [`src/serving/README.md`](src/serving/README.md) |
+| 4 | FastAPI + quantized serving, Dockerized (multi-adapter: extraction/summarization/RAG-QA on one loaded base model) | 🟢 Done — validated end-to-end via Docker Compose on CPU (all 3 endpoints); GPU quantized path validated separately in Colab (see [`src/serving/README.md`](src/serving/README.md)) |
 | 5 | Kubernetes manifests (minikube/kind) + GitHub Actions CI/CD | ⚪ Planned |
 | 6 | Monitoring (logging, optional Prometheus+Grafana) + write-up | ⚪ Planned |
 
