@@ -1,8 +1,22 @@
 # Clinical Report Assistant
 
-A fine-tuned, RAG-augmented LLM system for structured extraction, summarization, and question-answering over radiology reports — built on real clinical NLP data, served via quantized inference, containerized, and orchestrated with Kubernetes.
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Model: Qwen3-4B](https://img.shields.io/badge/base%20model-Qwen3--4B-purple.svg)](https://huggingface.co/Qwen/Qwen3-4B)
 
-> **Status:** All 6 phases done — data pipeline, QLoRA fine-tuning, RAG retrieval + grounded QA, and FastAPI serving all validated end-to-end, running on real Kubernetes (kind) via `kubectl apply`, with Prometheus-format monitoring instrumented. See [Roadmap](#roadmap) for details, or [`docs/write-up.md`](docs/write-up.md) for the full narrative.
+A fine-tuned, RAG-augmented LLM system for **structured extraction, summarization, and grounded question-answering over radiology reports**. Built on real clinical NLP data, served through a single quantized model with swappable LoRA adapters, containerized with Docker, and deployed to Kubernetes with Prometheus-format monitoring.
+
+The whole system runs on one 4-bit-quantized **Qwen3-4B** base model. Two LoRA adapters handle the narrow, format-specific tasks (extraction, summarization); the same base model with no adapter, given retrieved evidence from a vector index, handles open-ended QA.
+
+> 📖 **For the full engineering story** — why each decision was made, what broke, and how it got fixed — see [`docs/write-up.md`](docs/write-up.md).
+
+## What it does
+
+The service exposes three capabilities over radiology reports:
+
+- **Extract** — turn raw, unstructured dictation into structured JSON (`comparison`, `indication`, `findings`, `impression`, `diagnosis`).
+- **Summarize** — condense a report's findings into a concise clinical impression.
+- **Ask** — answer open-ended questions by retrieving genuinely similar past cases and grounding the answer in them, with cited report IDs, rather than guessing.
 
 ## Architecture
 
@@ -51,107 +65,129 @@ A fine-tuned, RAG-augmented LLM system for structured extraction, summarization,
               Prometheus-format, scrape-annotated)
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the final technical
-decision per phase, and [`docs/write-up.md`](docs/write-up.md) for the full
-narrative (why each decision, what broke, how it got fixed).
+See [`docs/architecture.md`](docs/architecture.md) for the key technical decision behind each component.
 
-## Dataset
+## Results
 
-**Primary:** [Open-i / Indiana University Chest X-ray dataset](https://openi.nlm.nih.gov) — openly licensed radiology reports and images from the NLM Open-i service, ~3,955 reports paired with ~7,470 images. No credentialing/CITI training required (chosen over MIMIC-CXR specifically to avoid that delay).
+Metrics are computed on the full **343-example held-out test set** per task by [`src/finetuning/evaluate.py`](src/finetuning/evaluate.py).
 
-- Official bulk files: `NLMCXR_reports.tgz` (XML reports), `NLMCXR_png.tgz` (images) — https://openi.nlm.nih.gov/imgs/collections/
-- Mirror: [Kaggle — Chest X-rays (Indiana University)](https://www.kaggle.com/datasets/raddar/chest-xrays-indiana-university)
-- Mirror: [Academic Torrents — XML reports](https://academictorrents.com/details/66450ba52ba3f83fbf82ef9c91f2bde0e845aba9) / [PNG images](https://academictorrents.com/details/5a3a439df24931f410fac269b87b050203d9467d)
-
-Each report XML contains structured sections (Comparison, Indication, Findings, Impression) plus MeSH/RadLex-coded diagnoses. See [`data/README.md`](data/README.md) for the data card and processing details.
-
-**Optional supplement (documented as synthetic-augmented if used):** template-generated synthetic reports for volume, and/or n2c2/i2b2 clinical NLP datasets for auxiliary tasks.
-
-## Roadmap
-
-| Phase | Description | Status |
+| Task | Metric | Score |
 |---|---|---|
-| 1 | Data acquisition, cleaning, repo scaffolding | 🟢 Done |
-| 2 | QLoRA fine-tuning (field extraction + summarization), tracked in MLflow | 🟢 Done — full test-set metrics below |
-| 3 | RAG layer — vector DB (Qdrant) + grounded QA over base Qwen3-4B | 🟢 Done — retrieval + generation validated (see [`src/rag/README.md`](src/rag/README.md)) |
-| 4 | FastAPI + quantized serving, Dockerized (multi-adapter: extraction/summarization/RAG-QA on one loaded base model) | 🟢 Done — validated end-to-end via Docker Compose on CPU (all 3 endpoints); GPU quantized path validated separately in Colab (see [`src/serving/README.md`](src/serving/README.md)) |
-| 5 | Kubernetes manifests (kind) + GitHub Actions CI/CD (docker build + manifest lint) | 🟢 Done — deployed via `kubectl apply`, all endpoints validated on a real cluster — see [`k8s/README.md`](k8s/README.md) |
-| 6 | Monitoring (`/metrics`, structured logging, scrape annotations) + write-up | 🟢 Done — see [`src/serving/README.md`](src/serving/README.md#monitoring), [`k8s/README.md`](k8s/README.md#monitoring--scope-decision), and [`docs/write-up.md`](docs/write-up.md) |
+| **Extraction** | Field F1 — comparison / indication / findings / impression | 0.968 / 0.963 / 0.969 / 0.962 |
+| **Extraction** | Diagnosis-list F1 (set overlap over MeSH tags) | 0.799 |
+| **Extraction** | Whole-object exact match (all 5 fields byte-identical) | 0.615 |
+| **Extraction** | JSON parse-failure rate | 0.029 |
+| **Summarization** | ROUGE-1 / ROUGE-2 / ROUGE-L (vs. ground-truth impression) | 0.694 / 0.592 / 0.682 |
+| **Summarization** | Exact match | 0.350 |
 
-Project is modular — a stop after Phase 4 still yields a complete fine-tuning + RAG + Docker deliverable.
+The model reliably captures the right content (96–97% per-field overlap) even when it doesn't reproduce it byte-for-byte. Summarization's low exact-match is expected and healthy for an abstractive task — near-1.0 would suggest memorization, not generalization.
 
-## Repo structure
+## Key engineering decisions
 
-```
-clinical-report-assistant/
-├── data/
-│   ├── raw/            # untouched downloaded files (gitignored)
-│   ├── processed/      # cleaned JSONL/CSV corpora (gitignored)
-│   └── README.md       # data card
-├── src/
-│   ├── data/            # download + preprocessing scripts
-│   ├── finetuning/       # QLoRA training scripts (Phase 2)
-│   ├── rag/              # indexing + retrieval (Phase 3)
-│   ├── serving/           # FastAPI app + inference server config (Phase 4);
-│   │                      # also houses Phase 6 monitoring (/metrics, logging)
-│   └── monitoring/        # empty on purpose — see src/monitoring/README.md
-├── configs/              # YAML configs (data, training, serving)
-├── notebooks/            # exploratory analysis
-├── docker/               # Dockerfiles + docker-compose
-├── k8s/                  # Kubernetes manifests
-├── tests/                # unit tests
-├── docs/                 # architecture notes, write-up drafts
-└── .github/workflows/    # CI/CD pipelines
-```
+- **One base model, two adapters, switched per request.** The serving layer loads a single Qwen3-4B instance with both LoRA adapters attached simultaneously and switches the active one per request via PEFT's `set_adapter()` / `disable_adapter()` — rather than holding three multi-gigabyte model copies in memory. This is the same pattern production multi-LoRA serving systems (e.g. vLLM's multi-LoRA support) are built around.
+- **Retrieval and fine-tuning solve different problems.** The extraction and summarization adapters can't answer open-ended questions — verified directly, not assumed. RAG-QA therefore runs on the plain base model with retrieved evidence, and with Qwen3's thinking mode left *on* (the opposite of the single-step extraction/summarization tasks, where an empty reasoning block was pure waste).
+- **Data quality is checked before training, not after a run fails.** An EDA pass caught and fixed two real issues — a de-identification placeholder token and a duplicate-content export artifact — both protected by regression tests before the first training run.
+- **Hardware-aware precision.** Training auto-detects bf16 vs. fp16 support per GPU, so the same code runs correctly on a Colab T4 and an A100 without a config change.
+- **Testable without the ML stack.** Heavy ML imports (`torch`, `transformers`, `peft`, `qdrant-client`) are deferred inside the functions that use them, so all pure logic — text building, F1/ROUGE scoring, JSON-parse fallbacks, Pydantic schemas — stays unit-testable in a plain Python environment.
 
-## Setup
+## Tech stack
+
+**ML / fine-tuning:** PyTorch · Hugging Face Transformers · PEFT (QLoRA) · TRL · bitsandbytes (4-bit NF4) · MLflow
+**RAG:** Qdrant (embedded mode) · Sentence-Transformers
+**Serving & ops:** FastAPI · Pydantic · Docker · Kubernetes (kind) · GitHub Actions CI · Prometheus-client
+
+## Quickstart
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/ozgurberat/clinical-report-assistant.git
 cd clinical-report-assistant
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-## Data pipeline
+Build the dataset:
 
 ```bash
-# Download raw reports + images from the official Open-i source
+# Download raw reports from the official Open-i source
 python -m src.data.download_openi --out data/raw
 
 # Parse XML reports into a structured JSONL corpus
 python -m src.data.preprocess --raw data/raw --out data/processed
 ```
 
-See [`src/data/download_openi.py`](src/data/download_openi.py) and [`src/data/preprocess.py`](src/data/preprocess.py) for details, and [`data/README.md`](data/README.md) for the resulting schema.
+Fine-tune, index, and serve (fine-tuning and indexing require a GPU — see the module READMEs):
 
-## Results
+```bash
+python -m src.finetuning.train --task extraction
+python -m src.finetuning.train --task summarization
+python -m src.rag.build_index --processed data/processed
 
-*(Populated as phases complete. Extraction/summarization numbers are on the
-full 343-example held-out test set, computed by
-[`src/finetuning/evaluate.py`](src/finetuning/evaluate.py); no baseline was
-computed for these — see below for why.)*
+# Serve locally, or via Docker Compose / Kubernetes
+uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
+docker compose up --build
+kubectl apply -f k8s/
+```
 
-| Metric | Baseline | Fine-tuned | Notes |
-|---|---|---|---|
-| Extraction — whole-object exact match | — | 0.615 | All 5 JSON fields byte-identical |
-| Extraction — JSON parse failure rate | — | 0.029 | ~10/343 malformed outputs |
-| Extraction — field F1 (comparison/indication/findings/impression) | — | 0.968 / 0.963 / 0.969 / 0.962 | Token-overlap F1, see `evaluate.py` |
-| Extraction — diagnosis list F1 | — | 0.799 | Set-overlap F1 over MeSH tags |
-| Summarization — exact match | — | 0.350 | Expected to be well under 1.0 — abstractive task |
-| Summarization — ROUGE-1 / ROUGE-2 / ROUGE-L | — | 0.694 / 0.592 / 0.682 | vs. ground-truth impression |
-| RAG retrieval + grounded QA | — | Qualitatively validated | No formal precision@k yet — see [`src/rag/README.md`](src/rag/README.md) |
-| Inference latency (p50/p95) | — | — | Pre- vs. post-quantization — Phase 4 |
-| Throughput (req/s) | — | — | Phase 4 serving benchmark |
+### API
 
-No "baseline" column is filled in above for the fine-tuning metrics because
-the meaningful baseline — the un-fine-tuned base model attempting the same
-narrow JSON-extraction/summarization tasks — was never run as a controlled
-comparison; the adapter-vs-base behavior we did observe (documented in
-`src/rag/README.md`) was a qualitative demonstration of a different point
-(narrow fine-tunes vs. general open-ended QA), not an apples-to-apples
-baseline for these specific metrics.
+```bash
+# Structured extraction
+curl -s localhost:8000/extract -H 'Content-Type: application/json' \
+  -d '{"report_text": "Comparison: none. Findings: The heart size is mildly enlarged. Lungs are clear. Impression: Mild cardiomegaly, otherwise unremarkable."}'
+# -> {"comparison": "...", "indication": "...", "findings": "...", "impression": "...", "diagnosis": ["cardiomegaly"]}
+
+# Summarization
+curl -s localhost:8000/summarize -H 'Content-Type: application/json' \
+  -d '{"findings": "The heart size is mildly enlarged. Lungs are clear. No effusion."}'
+# -> {"impression": "Mild cardiomegaly with otherwise clear lungs."}
+
+# Grounded QA over retrieved past cases
+curl -s localhost:8000/ask -H 'Content-Type: application/json' \
+  -d '{"question": "What is typically found in cases of mild cardiomegaly with clear lungs?", "top_k": 5}'
+# -> {"answer": "...", "reasoning": "...", "sources": ["CXR123", "CXR456"]}
+```
+
+Operational endpoints: `GET /health` (readiness + adapter/CUDA status) and `GET /metrics` (Prometheus-format request counts, a latency histogram, and tokens generated per adapter).
+
+> **Note:** trained LoRA adapters and the Qdrant index are gitignored — they're model/clinical artifacts that only exist wherever training and indexing ran. See [`src/serving/README.md`](src/serving/README.md) for how to place them before starting the service.
+
+## Dataset
+
+**[Open-i / Indiana University Chest X-ray dataset](https://openi.nlm.nih.gov)** — openly licensed radiology reports from the NLM Open-i service, ~3,955 reports paired with ~7,470 images. Chosen over MIMIC-CXR specifically to avoid a credentialing/CITI-training delay. Each report XML contains structured sections (Comparison, Indication, Findings, Impression) plus MeSH/RadLex-coded diagnoses.
+
+- Official bulk files: [openi.nlm.nih.gov/imgs/collections](https://openi.nlm.nih.gov/imgs/collections/)
+- Mirror: [Kaggle — Chest X-rays (Indiana University)](https://www.kaggle.com/datasets/raddar/chest-xrays-indiana-university)
+
+See [`data/README.md`](data/README.md) for the data card and processing details. This repository does not redistribute patient data.
+
+## Repository tour
+
+```
+clinical-report-assistant/
+├── src/
+│   ├── data/         # download + XML→JSONL preprocessing
+│   ├── finetuning/   # QLoRA training, prompt formatting, evaluation
+│   ├── rag/          # vector indexing, retrieval, grounded QA
+│   └── serving/      # FastAPI app (multi-adapter) + /metrics monitoring
+├── configs/          # YAML configs (data, training, RAG)
+├── notebooks/        # exploratory data analysis
+├── docker/           # Dockerfile
+├── k8s/              # Kubernetes manifests (kind)
+├── tests/            # offline unit tests (no GPU required)
+├── docs/             # architecture notes + full engineering write-up
+└── .github/workflows # CI (tests, image build, manifest lint)
+```
+
+## Limitations & future work
+
+Deliberately scoped out, and honest about it:
+
+- **No controlled base-model baseline** for the extraction/summarization metrics. The reported numbers are the fine-tuned model's absolute performance; an apples-to-apples "base model on the same narrow tasks" comparison hasn't been run.
+- **RAG-QA is validated qualitatively**, not with a formal retrieval metric (precision@k) yet.
+- **Serving latency/throughput are not yet benchmarked.** The `/metrics` histogram is in place to measure p50/p95, but no load test has been run.
+- **Monitoring stops at a real `/metrics` endpoint** plus Kubernetes scrape annotations — a live Prometheus/Grafana stack is intentionally not deployed. The goal was to demonstrate knowing *what* to instrument.
+- **Deployment is single-node `kind`**, not a cloud cluster.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Note: underlying Open-i dataset has its own usage terms; see [NLM Open-i](https://openi.nlm.nih.gov) for details. This repo does not redistribute patient data.
+MIT — see [LICENSE](LICENSE). The underlying Open-i dataset has its own usage terms; see [NLM Open-i](https://openi.nlm.nih.gov).

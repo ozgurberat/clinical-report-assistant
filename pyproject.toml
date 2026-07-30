@@ -5,7 +5,7 @@ description = "Fine-tuned, RAG-augmented LLM assistant for structured extraction
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Mirac" }]
+authors = [{ name = "Özgür Berat Baydemir", email = "o.baydemir@outlook.com" }]
 
 dependencies = [
     # Core ML / fine-tuning
