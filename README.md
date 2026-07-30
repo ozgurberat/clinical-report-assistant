@@ -125,8 +125,13 @@ python -m src.rag.build_index --processed data/processed
 # Serve locally, or via Docker Compose / Kubernetes
 uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
 docker compose up --build
-kubectl apply -f k8s/
+kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml
 ```
+
+`k8s/kind-config.yaml` is deliberately not part of that `apply` — it's a `kind`
+cluster-creation config (`kind create cluster --config k8s/kind-config.yaml`),
+a different resource kind that `kubectl` would reject if pointed at the whole
+`k8s/` directory. Full walkthrough in [`k8s/README.md`](k8s/README.md).
 
 ### API
 
