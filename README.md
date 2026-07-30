@@ -8,8 +8,6 @@ A fine-tuned, RAG-augmented LLM system for **structured extraction, summarizatio
 
 The whole system runs on one 4-bit-quantized **Qwen3-4B** base model. Two LoRA adapters handle the narrow, format-specific tasks (extraction, summarization); the same base model with no adapter, given retrieved evidence from a vector index, handles open-ended QA.
 
-> 📖 **For the full engineering story** — why each decision was made, what broke, and how it got fixed — see [`docs/write-up.md`](docs/write-up.md).
-
 ## What it does
 
 The service exposes three capabilities over radiology reports:
@@ -179,7 +177,7 @@ clinical-report-assistant/
 ├── docker/           # Dockerfile
 ├── k8s/              # Kubernetes manifests (kind)
 ├── tests/            # offline unit tests (no GPU required)
-├── docs/             # architecture notes + full engineering write-up
+├── docs/             # architecture notes (key technical decision per phase)
 └── .github/workflows # CI (tests, image build, manifest lint)
 ```
 

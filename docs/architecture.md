@@ -1,8 +1,7 @@
 # Architecture notes
 
 This file tracks the actual, final technical decisions per phase — what got
-built, not the original candidate list. For the fuller narrative (why each
-decision, what broke, how it got fixed), see [`write-up.md`](write-up.md).
+built, not the original candidate list.
 
 ## Phase 1 — Data pipeline
 
