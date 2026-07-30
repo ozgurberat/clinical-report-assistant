@@ -92,8 +92,9 @@ clinical-report-assistant/
 │   ├── data/            # download + preprocessing scripts
 │   ├── finetuning/       # QLoRA training scripts (Phase 2)
 │   ├── rag/              # indexing + retrieval (Phase 3)
-│   ├── serving/           # FastAPI app + inference server config (Phase 4)
-│   └── monitoring/        # logging/metrics (Phase 6)
+│   ├── serving/           # FastAPI app + inference server config (Phase 4);
+│   │                      # also houses Phase 6 monitoring (/metrics, logging)
+│   └── monitoring/        # empty on purpose — see src/monitoring/README.md
 ├── configs/              # YAML configs (data, training, serving)
 ├── notebooks/            # exploratory analysis
 ├── docker/               # Dockerfiles + docker-compose
